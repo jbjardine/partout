@@ -42,6 +42,7 @@ set(CFG_ARGS
 )
 ExternalProject_Add(OpenSSLProject
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendors/openssl
+    BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND perl ${CMAKE_CURRENT_SOURCE_DIR}/vendors/openssl/Configure ${CFG_ARGS}
     BUILD_COMMAND ${MAKE_CMD}
     INSTALL_COMMAND ${MAKE_CMD} install
