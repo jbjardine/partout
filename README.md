@@ -51,60 +51,43 @@ These are the requirements for Partout, but additional build tools may be requir
 
 #### Build
 
-First, fetch all the vendored submodules:
-
-```shell
-git submodule init
-git submodule update --recursive
-```
-
-Then, you will use one of the `scripts/build.*` variants based on the host platform:
+Use one of the `scripts/build.*` variants based on the host platform:
 
 - `scripts/build.sh` (bash)
 - `scripts/build.ps1` (Windows PowerShell)
 
 The script builds the vendors as static libraries and accepts a few options: 
 
-- `-a`: Build everything
-- `-config (Debug|Release)`: The CMake build type
-- `-android`: Build for Android
+- `-gen`: Generate CMake metadata
+- `-config (Debug|Release)`: The CMake build type (`build.sh` only)
 - `-l`: Build the Partout library (opt-in)
-- `-crypto (openssl|native)`: Pick a crypto subsystem between OpenSSL and Native/MbedTLS (WIP)
+- `-crypto (openssl|native[,openssl|native...])`: Pick one or more crypto subsystems between OpenSSL and Native/MbedTLS
 - `-wireguard`: Enable support for WireGuard (requires Go)
+- `-android`: Build for Android
+- `-vendors [bundled|<url>]`: Build bundled vendors (requires submodules), or provide the prebuilt vendor URL for Android/Windows
 
 For example, this will build Partout for release with a dependency on OpenSSL:
 
 ```shell
-$ scripts/build.sh -config Release -l -crypto openssl
+$ scripts/build.sh -gen -config Release -l -crypto openssl
 ```
 
 Sample output:
 
 ```
-bin/darwin-arm64/libpartout.a       # macOS
-bin/linux-aarch64/libpartout.a      # Linux
-bin/windows-arm64/libpartout.lib    # Windows
-bin/android-aarch64/libpartout.a    # Android
+# macOS
+bin/darwin-arm64/libpartout.dylib	
+# Linux
+bin/linux-aarch64/libpartout.so
+# Android
+bin/android-aarch64/libpartout.so
+# Windows
+bin/windows-arm64/libpartout.dll
 ```
 
-Additionally, `libpartout_c` must be linked. Partout must be bundled with the shared vendored libraries and the Swift runtime to work.
+Partout must be bundled with the shared vendored libraries to work. On Windows, it must also include the Swift runtime DLLs. Building for Android requires access to the Android NDK and the Swift Android SDK.
 
-Building for Android requires access to external SDKs:
-
-- `$ANDROID_NDK_ROOT` to point to your Android NDK installation
-- `$SWIFT_ANDROID_SDK` to point to your Swift for Android SDK installation (e.g. in `~/.swiftpm/swift-sdks`)
-
-The CMake configuration is done with the `android.toolchain.cmake` toolchain. The script runs on macOS, but can be adapted for other platforms with slight tweaks to `scripts/build.sh`.
-
-#### Codegen
-
-Partout comes with a [code generator][partout-codegen] that translates Swift data entities to a formal OpenAPI specification for non-Swift consumers.
-
-```
-swift run partout-codegen --manifest scripts/manifest.yaml
-```
-
-`partout-codegen` uses [swift-syntax][credits-swift-syntax] to build an intermediate representation (IR) of the Swift data entities, then proceeds to map it to the OpenAPI format. [openapi-generator][openapi-generator] can eventually be used to generate the Partout data models for other languages.
+Check out `scripts/build.sh` and `scripts/build.ps1` for more details.
 
 ## Demo
 
@@ -124,7 +107,7 @@ Open `Demo.xcodeproj` and run the `PartoutDemo` target.
 
 Copyright (c) 2026 Davide De Rosa. All rights reserved.
 
-The library is licensed under the [GPLv3][license]. The `MiniFoundation` targets are MIT-licensed.
+The library is licensed under the [GPLv3][license]. The `MiniFoundation` targets and the [CMake toolchains][github-toolchains] are MIT-licensed.
 
 ### Contributing
 
@@ -176,10 +159,10 @@ Website: [partout.io][about-website]
 [license-website]: https://partout.io/license
 [contrib-cla]: CLA.rst
 [contrib-readme]: CONTRIBUTING.md
-[partout-codegen]: https://github.com/partout-io/codegen
 [openapi-generator]: https://openapi-generator.tech/
 
 [github-releases]: https://github.com/partout-io/partout/releases
+[github-toolchains]: https://github.com/partout-io/partout/tree/master/cmake
 [credits-genericjson]: https://github.com/iwill/generic-json-swift
 [credits-mbedtls]: https://github.com/Mbed-TLS/mbedtls
 [credits-openssl]: https://github.com/openssl/openssl

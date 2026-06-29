@@ -5,18 +5,13 @@
  */
 
 #pragma once
+#include "portable/conditionals.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 
-#ifdef _WIN32
-#include <WinSock2.h>
-#else
+#if !PARTOUT_WINDOWS
 #include <arpa/inet.h>
-#include <net/if.h>
-#include <netdb.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
 #endif
 
 typedef enum {

@@ -6,7 +6,7 @@ Start a tunnel daemon to enforce a network configuration and optionally establis
 
 Given the main app and the daemon:
 
-- The app installs a ``Profile`` and starts the tunnel daemon with ``Tunnel/install(_:connect:options:title:)``.
+- The app installs a ``Profile`` and starts the tunnel daemon with ``Tunnel/install(_:connect:options:)``.
 - The daemon, typically a ``SimpleConnectionDaemon``, receives the ``Profile``.
 - If applicable, the daemon establishes and maintains the ``Connection`` described by the ``ConnectionModule`` of the profile.
 - The profile is converted to a network configuration with ``TunnelController/setTunnelSettings(with:)``.
@@ -16,44 +16,53 @@ Given the main app and the daemon:
 ### Starting a background service
 
 - ``ConnectionDaemon``
+- ``ConnectionReporter``
 - ``DefaultMessageHandler``
 - ``DummyReachabilityObserver``
 - ``MessageHandler``
 - ``NetworkObserver``
+- ``OnTunnelSnapshotCallback``
 - ``ReachabilityObserver``
 - ``SimpleConnectionDaemon``
 
 ### Setting up a connection
 
-- ``BetterPathBlock``
+- ``BetterPathStreamFactory``
 - ``Connection``
 - ``ConnectionParameters``
 - ``ConnectionStatus``
-- ``CyclingConnection``
 - ``DataCount``
 - ``EndpointResolver``
+- ``NativeSocketFactory``
 - ``NetworkInterfaceFactory``
-- ``POSIXInterfaceFactory``
+
+### Event loop
+
+- ``FdLooper``
+- ``Side``
 
 ### DNS resolution
 
 - ``DNSRecord``
 - ``DNSResolver``
+- ``DNSResolverFlag``
 - ``POSIXDNSStrategy``
+- ``ReachabilityInfo``
 - ``SimpleDNSResolver``
 - ``SimpleDNSStrategy``
 
 ### I/O interfaces
 
-- ``AutoUpgradingLink``
 - ``IOInterface``
 - ``LinkInterface``
 - ``LinkObserver``
-- ``POSIXBlockingSocket``
-- ``POSIXSocketObserver``
-- ``SocketIOInterface``
+- ``NativeIOError``
+- ``NativeIOInterface``
+- ``TunInterface``
 
 ### Applying network settings
 
+- ``NativeTunnelController``
 - ``TunnelController``
+- ``TunnelControllerOptions``
 - ``TunnelRemoteInfo``

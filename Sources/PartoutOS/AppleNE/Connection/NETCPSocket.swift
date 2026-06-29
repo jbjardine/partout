@@ -5,12 +5,18 @@
 import NetworkExtension
 
 /// An observer based on `NWTCPConnection`.
-@available(*, deprecated, message: "Use NESocketObserver")
 public final class NETCPObserver: LinkObserver {
     public struct Options: Sendable {
         public let minLength: Int
-
         public let maxLength: Int
+        public let withSafeValueObserver: Bool
+    }
+
+    protocol StateObserver {
+        func waitForState(
+            timeout: Int,
+            onState: @escaping (NWTCPConnectionState) throws -> Bool
+        ) async throws
     }
 
     private let ctx: PartoutLoggerContext
@@ -19,7 +25,7 @@ public final class NETCPObserver: LinkObserver {
 
     private let options: Options
 
-    private var observer: ValueObserver<NWTCPConnection>?
+    private var observer: StateObserver?
 
     public init(_ ctx: PartoutLoggerContext, nwConnection: NWTCPConnection, options: Options) {
         self.ctx = ctx
@@ -28,11 +34,15 @@ public final class NETCPObserver: LinkObserver {
     }
 
     public func waitForActivity(timeout: Int) async throws -> LinkInterface {
-        observer = ValueObserver(nwConnection)
+        if options.withSafeValueObserver {
+            observer = SafeObserver(nwConnection)
+        } else {
+            observer = LegacyObserver(nwConnection)
+        }
         defer {
             observer = nil
         }
-        try await observer?.waitForValue(on: \.state, timeout: timeout) { [weak self] state in
+        try await observer?.waitForState(timeout: timeout) { [weak self] state in
             guard let self else {
                 return false
             }
@@ -91,10 +101,6 @@ extension NETCPSocket {
             .map { _ in }
     }
 
-    nonisolated func setReadHandler(_ handler: @escaping ([Data]?, Error?) -> Void) {
-        loopReadPackets(handler)
-    }
-
     nonisolated func upgraded() -> LinkInterface {
         Self(
             nwConnection: NWTCPConnection(upgradeFor: nwConnection),
@@ -104,7 +110,7 @@ extension NETCPSocket {
         )
     }
 
-    nonisolated func shutdown() {
+    nonisolated func close() {
         nwConnection.writeClose()
         nwConnection.cancel()
     }
@@ -113,12 +119,21 @@ extension NETCPSocket {
 // MARK: IOInterface
 
 extension NETCPSocket {
-    nonisolated var fileDescriptor: UInt64? {
-        nil
-    }
-
     func readPackets() async throws -> [Data] {
-        fatalError("readPackets() unavailable")
+        // WARNING: runs in Network.framework queue
+        try await withCheckedThrowingContinuation { continuation in
+            nwConnection.readMinimumLength(options.minLength, maximumLength: options.maxLength) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let data, !data.isEmpty else {
+                    continuation.resume(throwing: PartoutError(.linkNotActive))
+                    return
+                }
+                continuation.resume(returning: [data])
+            }
+        }
     }
 
     func writePackets(_ packets: [Data]) async throws {
@@ -131,19 +146,6 @@ extension NETCPSocket {
 }
 
 private extension NETCPSocket {
-    nonisolated func loopReadPackets(_ handler: @escaping ([Data]?, Error?) -> Void) {
-
-        // WARNING: runs in Network.framework queue
-        nwConnection.readMinimumLength(options.minLength, maximumLength: options.maxLength) { [weak self] data, error in
-            handler(data.map { [$0] }, error)
-
-            // repeat until failure
-            if error == nil {
-                self?.loopReadPackets(handler)
-            }
-        }
-    }
-
     func asyncWritePacket(_ packet: Data) async throws {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -157,6 +159,36 @@ private extension NETCPSocket {
             }
         } onCancel: {
             nwConnection.cancel()
+        }
+    }
+}
+
+// MARK: - State observers
+
+private struct SafeObserver: NETCPObserver.StateObserver {
+    let backend: SafeValueObserver<NWTCPConnection>
+
+    init(_ connection: NWTCPConnection) {
+        backend = SafeValueObserver(connection)
+    }
+
+    func waitForState(timeout: Int, onState: @escaping (NWTCPConnectionState) throws -> Bool) async throws {
+        try await backend.waitForValue(on: \.state, timeout: timeout) { state in
+            try onState(state)
+        }
+    }
+}
+
+private struct LegacyObserver: NETCPObserver.StateObserver {
+    let backend: ValueObserver<NWTCPConnection>
+
+    init(_ connection: NWTCPConnection) {
+        backend = ValueObserver(connection)
+    }
+
+    func waitForState(timeout: Int, onState: @escaping (NWTCPConnectionState) throws -> Bool) async throws {
+        try await backend.waitForValue(on: \.state, timeout: timeout) { state in
+            try onState(state)
         }
     }
 }

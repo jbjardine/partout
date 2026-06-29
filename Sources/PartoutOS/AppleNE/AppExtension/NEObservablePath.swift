@@ -2,7 +2,6 @@
 //
 // SPDX-License-Identifier: GPL-3.0
 
-import Dispatch
 import Network
 
 /// An observer that publishes updates from a `NWPathMonitor`.
@@ -36,6 +35,9 @@ public final class NEObservablePath: ReachabilityObserver {
         }
         monitor.start(queue: monitorQueue)
     }
+
+    public func stopObserving() {
+    }
 }
 
 extension NEObservablePath {
@@ -50,14 +52,17 @@ extension NEObservablePath {
     public var isReachableStream: AsyncStream<Bool> {
         AsyncStream { [weak self] continuation in
             let relayTask = Task { [weak self] in
-                guard let self else {
+                guard let pathStream = self?.stream else {
                     continuation.finish()
                     return
                 }
-                let pathStream = self.stream
                 for await path in pathStream {
+                    guard let self else {
+                        continuation.finish()
+                        return
+                    }
                     guard !Task.isCancelled else {
-                        pp_log(self.ctx, .os, .debug, "Cancelled NEObservablePath.isReachableStream")
+                        pp_log(ctx, .os, .debug, "Cancelled NEObservablePath.isReachableStream")
                         break
                     }
                     let reachable = path.isSatisfiable

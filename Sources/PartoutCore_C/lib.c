@@ -9,14 +9,13 @@
 #include "portable/common.h"
 #include "portable/lib.h"
 
-#ifdef _WIN32
-#include <windows.h>
-struct _pp_lib {
+#if PARTOUT_WINDOWS
+struct __pp_lib_struct {
     HMODULE handle;
 };
 #else
 #include <dlfcn.h>
-struct _pp_lib {
+struct __pp_lib_struct {
     void *handle;
 };
 #endif
@@ -26,7 +25,7 @@ struct _pp_lib {
 pp_lib pp_lib_create(const char *path) {
     const size_t path_len = strlen(path) + PP_LIB_EXT_MAXLEN;
     char *path_ext = pp_alloc(path_len);
-#ifdef _WIN32
+#if PARTOUT_WINDOWS
     snprintf(path_ext, path_len, "%s.dll", path);
     HMODULE handle = LoadLibraryExA(path_ext, NULL, LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!handle) {
@@ -34,7 +33,7 @@ pp_lib pp_lib_create(const char *path) {
         goto failure;
     }
 #else
-#ifdef __APPLE__
+#if PARTOUT_APPLE
     snprintf(path_ext, path_len, "lib%s.dylib", path);
 #else
     snprintf(path_ext, path_len, "lib%s.so", path);
@@ -57,7 +56,7 @@ failure:
 
 void pp_lib_free(pp_lib lib) {
     if (!lib) return;
-#ifdef _WIN32
+#if PARTOUT_WINDOWS
     FreeLibrary(lib->handle);
 #else
     dlclose(lib->handle);
@@ -66,8 +65,8 @@ void pp_lib_free(pp_lib lib) {
 }
 
 void *pp_lib_load(const pp_lib lib, const char *symbol) {
-#ifdef _WIN32
-    void *ptr = GetProcAddress(lib->handle, symbol);
+#if PARTOUT_WINDOWS
+    void *ptr = (void *)GetProcAddress(lib->handle, symbol);
 #else
     void *ptr = dlsym(lib->handle, symbol);
 #endif

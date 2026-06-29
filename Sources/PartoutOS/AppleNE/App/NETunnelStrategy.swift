@@ -18,6 +18,8 @@ public actor NETunnelStrategy {
 
     private let options: Set<Option>
 
+    private let title: @Sendable (Profile) -> String
+
     private nonisolated let managersSubject: CurrentValueStream<[Profile.ID: NETunnelProviderManager]>
 
     private var allManagers: [Profile.ID: NETunnelProviderManager] {
@@ -26,7 +28,7 @@ public actor NETunnelStrategy {
         }
     }
 
-    private var pendingSaveTask: Task<Void, Error>?
+    private var pendingSaveTask: PendingSaveTask?
 
     // TODO: #218/passepartout, support .multiple option after implementing in PTP
     public init(
@@ -34,11 +36,13 @@ public actor NETunnelStrategy {
         bundleIdentifier: String,
         coder: NEProtocolCoder,
 //        options: Set<Option> = []
+        title: @escaping @Sendable (Profile) -> String
     ) {
         self.ctx = ctx
         self.bundleIdentifier = bundleIdentifier
         self.coder = coder
 //        self.options = options
+        self.title = title
         options = []
         managersSubject = CurrentValueStream([:])
         allManagers = [:]
@@ -72,17 +76,12 @@ extension NETunnelStrategy: TunnelObservableStrategy {
         }
     }
 
-    public func install(
-        _ profile: Profile,
-        connect: Bool,
-        options: Sendable?,
-        title: @escaping @Sendable (Profile) -> String
-    ) async throws {
+    public func install(_ profile: Profile, connect: Bool, options: Sendable?) async throws {
         if connect, !self.options.contains(.multiple) {
             await disconnectCurrentManagers()
         }
         let nsOptions = options as? [String: NSObject]
-        try await save(profile, forConnecting: connect, options: nsOptions, title: title)
+        try await save(profile, forConnecting: connect, options: nsOptions)
     }
 
     public func uninstall(profileId: Profile.ID) async throws {
@@ -124,21 +123,25 @@ extension NETunnelStrategy: TunnelObservableStrategy {
     }
 
     public nonisolated var didUpdateActiveProfiles: AsyncStream<[Profile.ID: TunnelSnapshot]> {
-        AsyncStream { [weak self] continuation in
-            Task { [weak self] in
-                guard let self else {
-                    continuation.finish()
-                    return
-                }
-                for await activeProfiles in self.activeProfilesStream.dropFirst() {
+        let stream = activeProfilesStream
+        return AsyncStream { [weak self] continuation in
+            let task = Task { [weak self] in
+                for await activeProfiles in stream {
+                    guard let self else {
+                        continuation.finish()
+                        return
+                    }
                     guard !Task.isCancelled else {
-                        pp_log(self.ctx, .os, .debug, "Cancelled NETunnelStrategy.didUpdateActiveProfiles")
+                        pp_log(ctx, .os, .debug, "Cancelled NETunnelStrategy.didUpdateActiveProfiles")
                         break
                     }
-                    pp_log(self.ctx, .os, .debug, "NETunnelStrategy.activeProfiles -> \(activeProfiles.values.description)")
+                    pp_log(ctx, .os, .debug, "NETunnelStrategy.activeProfiles -> \(activeProfiles.values.description)")
                     continuation.yield(activeProfiles)
                 }
                 continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
@@ -154,18 +157,10 @@ extension NETunnelStrategy: NETunnelManagerRepository {
         return managers
     }
 
-    public func save<O>(
-        _ profile: Profile,
-        forConnecting: Bool,
-        options: O?,
-        title: @Sendable (Profile) -> String
-    ) async throws {
+    public func save<O>(_ profile: Profile, forConnecting: Bool, options: O?) async throws {
         profile.log(.os, .notice, withPreamble: "Encoded profile:")
 
-        let proto = try coder.protocolConfiguration(
-            from: profile,
-            title: title
-        )
+        let proto = try coder.protocolConfiguration(from: profile, title: title)
 
         // store custom data on the side
         proto.profileId = profile.id
@@ -228,13 +223,14 @@ extension NETunnelStrategy: NETunnelManagerRepository {
     }
 
     public nonisolated var managersStream: AsyncStream<[Profile.ID: NETunnelProviderManager]> {
-        AsyncStream { [weak self] continuation in
-            Task { [weak self] in
-                guard let self else {
-                    continuation.finish()
-                    return
-                }
-                for await value in self.managersSubject.subscribe().dropFirst() {
+        let stream = managersSubject.subscribe().dropFirst()
+        return AsyncStream { [weak self] continuation in
+            let task = Task { [weak self] in
+                for await value in stream {
+                    guard let self else {
+                        continuation.finish()
+                        return
+                    }
                     guard !Task.isCancelled else {
                         pp_log(self.ctx, .os, .debug, "Cancelled NETunnelStrategy.managersStream")
                         break
@@ -242,6 +238,9 @@ extension NETunnelStrategy: NETunnelManagerRepository {
                     continuation.yield(value)
                 }
                 continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
             }
         }
     }
@@ -304,20 +303,41 @@ private extension NETunnelStrategy {
         _ managerBlock: @escaping @autoclosure () -> NETunnelProviderManager,
         block: @escaping @Sendable (NETunnelProviderManager) -> Void
     ) async throws -> NETunnelProviderManager {
-        if let pendingSaveTask {
-            try await pendingSaveTask.value
+        while let pendingSaveTask {
+            do {
+                try await pendingSaveTask.task.value
+                clearPendingSaveTask(pendingSaveTask)
+            } catch {
+                clearPendingSaveTask(pendingSaveTask)
+                throw error
+            }
         }
+
         let manager = managerBlock()
-        pendingSaveTask = Task { @Sendable in
+        let pendingSaveTask = PendingSaveTask(task: Task { @Sendable in
             try await manager.loadFromPreferences()
             try Task.checkCancellation()
             block(manager)
             try Task.checkCancellation()
             try await manager.saveToPreferences()
+        })
+        self.pendingSaveTask = pendingSaveTask
+
+        do {
+            try await pendingSaveTask.task.value
+            clearPendingSaveTask(pendingSaveTask)
+        } catch {
+            clearPendingSaveTask(pendingSaveTask)
+            throw error
         }
-        try await pendingSaveTask?.value
-        pendingSaveTask = nil
         return manager
+    }
+
+    func clearPendingSaveTask(_ pendingSaveTask: PendingSaveTask) {
+        guard self.pendingSaveTask?.id == pendingSaveTask.id else {
+            return
+        }
+        self.pendingSaveTask = nil
     }
 
     func disconnectCurrentManagers() async {
@@ -344,6 +364,12 @@ private extension NETunnelStrategy {
     }
 }
 
+private struct PendingSaveTask: Sendable {
+    let id = UniqueID()
+
+    let task: Task<Void, Error>
+}
+
 // MARK: - Active managers
 
 private extension NETunnelStrategy {
@@ -358,7 +384,7 @@ private extension NETunnelStrategy {
                     $0.filter {
                         $0.value.rank > 0
                     }
-                    .compactMapValues(\.asActiveProfile)
+                    .compactMapValues(\.asSnapshot)
                 }
         } else {
             mappedStream = stream
@@ -377,8 +403,11 @@ private extension NETunnelStrategy {
                     let filtered = $0.filter {
                         $0.value.rank == maxRank
                     }
-                    assert(filtered.count <= 1, "Max ranked manager must be at most one")
-                    return filtered.compactMapValues(\.asActiveProfile)
+                    // There might be a moment where 2 managers may be enabled at the same
+                    // time, e.g., while switching from one to another one. We should
+                    // tolerate this scenario.
+                    assert(filtered.count <= 2, "Max ranked manager must be at most two")
+                    return filtered.compactMapValues(\.asSnapshot)
                 }
         }
 
@@ -442,7 +471,7 @@ private extension NETunnelProviderManager {
 #if os(iOS) || os(tvOS)
         // only one profile at a time is enabled on iOS/tvOS
         if isEnabled {
-            return .max
+            return isOnDemandEnabled ? .max : .max - 1
         }
 #endif
         if ![.disconnected, .invalid].contains(connection.status) {
@@ -520,13 +549,16 @@ extension NETunnelProviderManager: @retroactive @unchecked Sendable {
 }
 
 private extension NETunnelProviderManager {
-    var asActiveProfile: TunnelSnapshot? {
+    var asSnapshot: TunnelSnapshot? {
         guard let profileId else {
             return nil
         }
+        let status = connection.status.asTunnelStatus
+        let isEnabled = isEnabled && (isOnDemandEnabled || status != .inactive)
         return TunnelSnapshot(
             id: profileId,
-            status: connection.status.asTunnelStatus,
+            isEnabled: isEnabled,
+            status: status,
             onDemand: isEnabled && isOnDemandEnabled
         )
     }

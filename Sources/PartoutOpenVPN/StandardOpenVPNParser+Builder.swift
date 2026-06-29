@@ -218,7 +218,7 @@ extension StandardOpenVPNParser.Builder {
                 optCompressionAlgorithm = (arg == "no") ? .disabled : .LZO
             } else {
                 guard components.count > 1, components[1] == "no" else {
-                    throw StandardOpenVPNParserError.unsupportedConfiguration(option: line)
+                    throw StandardOpenVPNParserError.unsupportedCompression(option: line)
                 }
                 optCompressionAlgorithm = .disabled
             }
@@ -230,7 +230,7 @@ extension StandardOpenVPNParser.Builder {
                 switch arg {
                 case "lzo":
                     guard supportsLZO else {
-                        throw StandardOpenVPNParserError.unsupportedConfiguration(option: line)
+                        throw StandardOpenVPNParserError.unsupportedCompression(option: line)
                     }
                     optCompressionAlgorithm = .LZO
 
@@ -242,7 +242,7 @@ extension StandardOpenVPNParser.Builder {
                     optCompressionAlgorithm = .disabled
 
                 default:
-                    throw StandardOpenVPNParserError.unsupportedConfiguration(option: line)
+                    throw StandardOpenVPNParserError.unsupportedCompression(option: line)
                 }
             } else {
                 optCompressionAlgorithm = .disabled
@@ -563,6 +563,8 @@ extension StandardOpenVPNParser.Builder {
 
         // MARK: General
 
+        // Normalize deprecated `cipher` to the same slot used for the modern
+        // `data-ciphers-fallback`, since serialization prefers the modern form.
         builder.cipher = optDataCiphersFallback ?? optCipher
         builder.dataCiphers = optDataCiphers
         builder.digest = optDigest

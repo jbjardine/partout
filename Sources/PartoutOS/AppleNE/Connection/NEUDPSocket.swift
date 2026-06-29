@@ -5,10 +5,17 @@
 import NetworkExtension
 
 /// An observer based on `NWUDPSession`.
-@available(*, deprecated, message: "Use NESocketObserver")
 public final class NEUDPObserver: LinkObserver {
     public struct Options: Sendable {
         public let maxDatagrams: Int
+        public let withSafeValueObserver: Bool
+    }
+
+    protocol StateObserver {
+        func waitForState(
+            timeout: Int,
+            onState: @escaping (NWUDPSessionState) throws -> Bool
+        ) async throws
     }
 
     private let ctx: PartoutLoggerContext
@@ -17,7 +24,7 @@ public final class NEUDPObserver: LinkObserver {
 
     private let options: Options
 
-    private var observer: ValueObserver<NWUDPSession>?
+    private var observer: StateObserver?
 
     public init(_ ctx: PartoutLoggerContext, nwSession: NWUDPSession, options: Options) {
         self.ctx = ctx
@@ -26,11 +33,15 @@ public final class NEUDPObserver: LinkObserver {
     }
 
     public func waitForActivity(timeout: Int) async throws -> LinkInterface {
-        observer = ValueObserver(nwSession)
+        if options.withSafeValueObserver {
+            observer = SafeObserver(nwSession)
+        } else {
+            observer = LegacyObserver(nwSession)
+        }
         defer {
             observer = nil
         }
-        try await observer?.waitForValue(on: \.state, timeout: timeout) { [weak self] state in
+        try await observer?.waitForState(timeout: timeout) { [weak self] state in
             guard let self else {
                 return false
             }
@@ -68,6 +79,10 @@ private actor NEUDPSocket: LinkInterface {
 
     let remoteProtocol: EndpointProtocol
 
+    private let readStream: AsyncThrowingStream<[Data], Error>
+
+    private let readContinuation: AsyncThrowingStream<[Data], Error>.Continuation
+
     init(
         nwSession: NWUDPSession,
         options: NEUDPObserver.Options,
@@ -78,6 +93,25 @@ private actor NEUDPSocket: LinkInterface {
         self.options = options
         self.remoteAddress = remoteAddress
         self.remoteProtocol = remoteProtocol
+
+        var newReadContinuation: AsyncThrowingStream<[Data], Error>.Continuation?
+        readStream = AsyncThrowingStream { continuation in
+            newReadContinuation = continuation
+        }
+        guard let newReadContinuation else {
+            fatalError("withReadPackets requires non-nil readContinuation")
+        }
+        readContinuation = newReadContinuation
+
+        // WARNING: runs in Network.framework queue
+        nwSession.setReadHandler({ [newReadContinuation] packets, error in
+            if let error {
+                newReadContinuation.finish(throwing: error)
+                return
+            }
+            guard let packets, !packets.isEmpty else { return }
+            newReadContinuation.yield(packets)
+        }, maxDatagrams: options.maxDatagrams)
     }
 }
 
@@ -89,12 +123,6 @@ extension NEUDPSocket {
             .map { _ in }
     }
 
-    nonisolated func setReadHandler(_ handler: @escaping ([Data]?, Error?) -> Void) {
-
-        // WARNING: runs in Network.framework queue
-        nwSession.setReadHandler(handler, maxDatagrams: options.maxDatagrams)
-    }
-
     nonisolated func upgraded() -> LinkInterface {
         Self(
             nwSession: NWUDPSession(upgradeFor: nwSession),
@@ -104,7 +132,7 @@ extension NEUDPSocket {
         )
     }
 
-    nonisolated func shutdown() {
+    nonisolated func close() {
         nwSession.cancel()
     }
 }
@@ -112,12 +140,8 @@ extension NEUDPSocket {
 // MARK: IOInterface
 
 extension NEUDPSocket {
-    nonisolated var fileDescriptor: UInt64? {
-        nil
-    }
-
     func readPackets() async throws -> [Data] {
-        fatalError("readPackets() unavailable")
+        try await readStream.nextElement() ?? []
     }
 
     func writePackets(_ packets: [Data]) async throws {
@@ -136,6 +160,36 @@ extension NEUDPSocket {
             }
         } onCancel: {
             nwSession.cancel()
+        }
+    }
+}
+
+// MARK: - State observers
+
+private struct SafeObserver: NEUDPObserver.StateObserver {
+    let backend: SafeValueObserver<NWUDPSession>
+
+    init(_ session: NWUDPSession) {
+        backend = SafeValueObserver(session)
+    }
+
+    func waitForState(timeout: Int, onState: @escaping (NWUDPSessionState) throws -> Bool) async throws {
+        try await backend.waitForValue(on: \.state, timeout: timeout) { state in
+            try onState(state)
+        }
+    }
+}
+
+private struct LegacyObserver: NEUDPObserver.StateObserver {
+    let backend: ValueObserver<NWUDPSession>
+
+    init(_ session: NWUDPSession) {
+        backend = ValueObserver(session)
+    }
+
+    func waitForState(timeout: Int, onState: @escaping (NWUDPSessionState) throws -> Bool) async throws {
+        try await backend.waitForValue(on: \.state, timeout: timeout) { state in
+            try onState(state)
         }
     }
 }

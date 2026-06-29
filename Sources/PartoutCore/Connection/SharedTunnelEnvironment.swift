@@ -2,8 +2,6 @@
 //
 // SPDX-License-Identifier: GPL-3.0
 
-import Dispatch
-
 /// A ``TunnelEnvironment`` that stores data in memory.
 public final class SharedTunnelEnvironment: TunnelEnvironment, @unchecked Sendable {
     private let profileId: Profile.ID?
@@ -16,6 +14,12 @@ public final class SharedTunnelEnvironment: TunnelEnvironment, @unchecked Sendab
         self.profileId = profileId
         queue = DispatchQueue(label: "SharedTunnelEnvironment.\(profileId?.uuidString ?? "<anonymous>")")
         self.values = values
+    }
+
+    public func environmentData(forKey key: String) -> Data? {
+        queue.sync {
+            values[key]
+        }
     }
 
     public func setEnvironmentValue<T>(_ value: T, forKey key: TunnelEnvironmentKey<T>) where T: Encodable {

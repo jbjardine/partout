@@ -11,12 +11,15 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "test-abi",
+            name: "test-posix-socket",
             dependencies: ["partout"]
         ),
         .executableTarget(
-            name: "test-posix-socket",
-            dependencies: ["partout"]
+            name: "test-daemon",
+            dependencies: ["partout"],
+            resources: [
+                .copy("profiles")
+            ]
         )
     ]
 )

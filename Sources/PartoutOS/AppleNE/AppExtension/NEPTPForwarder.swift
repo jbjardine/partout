@@ -26,8 +26,10 @@ public actor NEPTPForwarder {
         environment: TunnelEnvironment,
         factoryOptions: NEInterfaceFactory.Options = .init(),
         connectionOptions: ConnectionParameters.Options = .init(),
+        cancelsUnrecoverable: Bool,
         stopDelay: Int? = nil,
-        reconnectionDelay: Int? = nil
+        reconnectionDelay: Int? = nil,
+        minDataCountDelta: UInt64? = nil
     ) throws {
         guard let provider = controller.provider else {
             pp_log(ctx, .os, .info, "NEPTPForwarder: NEPacketTunnelProvider released")
@@ -35,7 +37,6 @@ public actor NEPTPForwarder {
         }
         let factory = NEInterfaceFactory(ctx, provider: provider, options: factoryOptions)
         let reachability = NEObservablePath(ctx)
-
         let connectionParameters = ConnectionParameters(
             profile: profile,
             controller: controller,
@@ -51,8 +52,10 @@ public actor NEPTPForwarder {
             connectionParameters: connectionParameters,
             messageHandler: messageHandler,
             startsImmediately: true,
+            cancelsUnrecoverable: cancelsUnrecoverable,
             stopDelay: stopDelay,
-            reconnectionDelay: reconnectionDelay
+            reconnectionDelay: reconnectionDelay,
+            minDataCountDelta: minDataCountDelta
         )
 
         self.ctx = ctx
@@ -60,7 +63,7 @@ public actor NEPTPForwarder {
     }
 
     deinit {
-        pp_log(ctx, .os, .info, "Deinit PTP")
+        pp_log(ctx, .os, .debug, "Deinit PTP")
     }
 
     public func startTunnel(options: [String: NSObject]?) async throws {
@@ -81,9 +84,9 @@ public actor NEPTPForwarder {
     public func handleAppMessage(_ messageData: Data) async -> Data? {
         pp_log(ctx, .os, .debug, "Handle PTP message")
         do {
-            let input = try JSONDecoder().decode(Message.Input.self, from: messageData)
+            let input = try JSONDecoder.shared().decode(Message.Input.self, from: messageData)
             let output = try await daemon.sendMessage(input)
-            let encodedOutput = try JSONEncoder().encode(output)
+            let encodedOutput = try JSONEncoder.shared().encode(output)
             switch input {
             case .environment:
                 break

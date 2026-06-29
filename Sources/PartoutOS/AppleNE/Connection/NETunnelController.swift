@@ -22,11 +22,9 @@ extension Profile {
 /// A controller based on `NEPacketTunnelProvider`.
 public final class NETunnelController: TunnelController {
     public struct Options: Sendable {
-        public var dnsFallbackServers: [String]
+        public var dnsFallbackServers: [String] = []
 
-        public init() {
-            dnsFallbackServers = []
-        }
+        public init() {}
     }
 
     nonisolated(unsafe)
@@ -49,7 +47,7 @@ public final class NETunnelController: TunnelController {
         tun = NETunnelInterface(.init(profile.id), impl: provider.packetFlow)
     }
 
-    public func setTunnelSettings(with info: TunnelRemoteInfo?) async throws -> IOInterface {
+    public func setTunnelSettings(with info: TunnelRemoteInfo?) async throws -> TunInterface {
         guard let provider else {
             logReleasedProvider()
             throw PartoutError(.releasedObject)
@@ -61,10 +59,10 @@ public final class NETunnelController: TunnelController {
         return tun
     }
 
-    public func configureSockets(with descriptors: [UInt64]) {
+    public func configureSockets(with descriptors: [SocketDescriptor]) {
     }
 
-    public func clearTunnelSettings(_ tunnel: IOInterface, withKillSwitch: Bool) async {
+    public func clearTunnelSettings(withKillSwitch: Bool) async {
         do {
             pp_log_id(profile.id, .os, .info, "Clear tunnel settings (kill switch = \(withKillSwitch))")
             try await provider?.clearTunnelSettings(withKillSwitch: withKillSwitch)

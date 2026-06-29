@@ -32,6 +32,7 @@ The ``NEPTPForwarder`` wrapper is a simple way to build a basic [NEPacketTunnelP
 
 ### App Extension
 
+- ``NEBetterPathStreamFactory``
 - ``NEObservablePath``
 - ``NEPTPForwarder``
 - ``NESettingsApplying``
@@ -48,7 +49,6 @@ The ``NEPTPForwarder`` wrapper is a simple way to build a basic [NEPacketTunnelP
 ### Connection
 
 - ``NEInterfaceFactory``
-- ``NESocketObserver``
 - ``NETCPObserver``
 - ``NETunnelInterface``
 - ``NETunnelController``

@@ -3,6 +3,12 @@ name: Unit Tests
 on:
   pull_request:
     types: [ opened, synchronize ]
+    paths-ignore:
+      - "README.md"
+      - "**/*.md"
+      - "scripts/*.sh"
+      - "scripts/*.ps1"
+      - "**/*.kt" # For now
 
 concurrency:
   group: ${{ github.ref }}
@@ -14,6 +20,14 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v6
+      - name: Verify CMake file lists
+        run: |
+          scripts/gen-cmake-files.sh
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git status --short
+            exit 1
+          fi
       - uses: partout-io/action-prepare-xcode-build@master
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
@@ -21,13 +35,6 @@ jobs:
         run: |
           expected="let useFoundationCompatibility: FoundationCompatibility = .off"
           grep "^$expected" Package.swift
-      - name: Verify generated OpenAPI is up to date
-        run: |
-          scripts/gen-api.sh
-          if [[ -n "$(git status --porcelain)" ]]; then
-            git status --short
-            exit 1
-          fi
       - name: Run tests
         run: |
           swift test

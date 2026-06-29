@@ -4,7 +4,6 @@
 
 /// A set of extra info that a ``Connection`` may signal to the tunnel to complete the configuration stage.
 public struct TunnelRemoteInfo: Sendable {
-
     /// The originating module identifier.
     public let originalModuleId: UniqueID
 
@@ -14,17 +13,13 @@ public struct TunnelRemoteInfo: Sendable {
     /// The extra modules returned by the connection.
     public let modules: [Module]?
 
-    /// The file descriptors of the underlying connections.
-    public let fileDescriptors: [UInt64]
-
     /// True if the controller should create a virtual I/O device.
     public let requiresVirtualDevice: Bool
 
-    public init(originalModuleId: UniqueID, address: Address?, modules: [Module]?, fileDescriptors: [UInt64], requiresVirtualDevice: Bool = true) {
+    public init(originalModuleId: UniqueID, address: Address?, modules: [Module]?, requiresVirtualDevice: Bool) {
         self.originalModuleId = originalModuleId
         self.address = address
         self.modules = modules
-        self.fileDescriptors = fileDescriptors
         self.requiresVirtualDevice = requiresVirtualDevice
     }
 }

@@ -7,15 +7,15 @@
 #include <stdlib.h>
 #include "portable/prng.h"
 
-uint32_t pp_prng_rand() {
-#ifdef _WIN32
+uint32_t pp_prng_rand(void) {
+#if PARTOUT_WINDOWS
     return rand();
 #else
     return arc4random();
 #endif
 }
 
-#if defined(__APPLE__)
+#if PARTOUT_APPLE
 
 #include <Security/Security.h>
 
@@ -23,12 +23,11 @@ bool pp_prng_do(uint8_t *dst, size_t len) {
     return SecRandomCopyBytes(kSecRandomDefault, len, dst) == errSecSuccess;
 }
 
-#elif defined(_WIN32)
+#elif PARTOUT_WINDOWS
 
-#include <windows.h>
 #include <bcrypt.h>
 
-bool pp_prng_do(uint8_t *_Nonnull dst, size_t len) {
+bool pp_prng_do(uint8_t *dst, size_t len) {
     NTSTATUS status = BCryptGenRandom(
         NULL,
         dst,
@@ -44,7 +43,7 @@ bool pp_prng_do(uint8_t *_Nonnull dst, size_t len) {
 #include <sys/random.h>
 
 bool pp_prng_do(uint8_t *dst, size_t len) {
-#ifdef __ANDROID__
+#if PARTOUT_ANDROID
     arc4random_buf(dst, len);
     return true;
 #else
